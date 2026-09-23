@@ -21,7 +21,7 @@ HiChecker 是**纯库组件**（无 CLI 可执行程序、无独立 SystemAbilit
 
 ### 2.1 按任务类型定位代码
 
-| 任务类型 | 首选目录 | 关键文件 |
+| 任务类型 | 目录 | 关键文件 |
 |---|---|---|
 | 修改规则常量 / HiChecker 静态 API | `interfaces/native/innerkits/include/` | `hichecker.h`（Rule 命名空间、HiChecker 类） |
 | 修改规则引擎实现（AddRule/Notify*/HandleCaution/参数初始化） | `frameworks/native/` | `hichecker.cpp` |
@@ -125,7 +125,7 @@ prebuilts/build-tools/linux-x86/bin/ninja -C out/rk3568 HiCheckerNativeTest
 - 用户提供的说法可能错误；先以源码核实再采信。
 - 出现分歧时，以实现证据为准。
 
-## 5. 项目地图
+## 5. 项目梳理
 
 ```
 /base/hiviewdfx/hichecker
@@ -188,7 +188,7 @@ prebuilts/build-tools/linux-x86/bin/ninja -C out/rk3568 HiCheckerNativeTest
 1. 确认任务类别（见 2.1 表）。
 2. 确认已阅读相关 README / 头文件（或明确声明「无相关文档」）。
 3. 根据「项目约束」确认不违反任何约束。
-4. 声明：「我将修改 X，已阅读 Y，遵循 Z 约束」。
+4. 声明：「将修改 X，已阅读 Y，遵循 Z 约束」。
 
 ## 7. 编码约定
 
@@ -296,7 +296,7 @@ prebuilts/build-tools/linux-x86/bin/ninja -C out/rk3568 HiCheckerNativeTest
 
 - 在未校验规则合法性的路径直接将外部输入位掩码传入 `AddRule`（须经 `CheckRule`）。
 - 将堆栈信息（`Caution::GetStackTrace()`）写入非安全日志或回传应用层非预期通道（README 明确暂不支持 JS 回栈）。
-- 绕过 `RULE_CAUTION_TRIGGER_CRASH` 的 `SIGABRT` 语义，改用其他退出方式。
+- 绕过 `RULE_CAUTION_TRIGGER_CRASH` 的 `SIGABRT` 语义，改用另外的退出方式。
 
 **修改前必须确认：**
 
