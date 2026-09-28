@@ -106,6 +106,22 @@ prebuilts/build-tools/linux-x86/bin/ninja -C out/rk3568 HiCheckerNativeTest
 
 报告应包含：改动摘要（文件列表、改动点）、验证结果（构建/测试输出）、风险评估（API/ABI 兼容性、性能、crash 风险）、未完成事项。
 
+### 3.7 最小验证与静态检查
+
+单规则或小改动不必全量构建，按以下最小路径验证：
+
+```bash
+# 最小验证：只构建并运行受影响模块的单元测试
+prebuilts/build-tools/linux-x86/bin/ninja -C out/rk3568 HiCheckerNativeTest
+./out/rk3568/tests/hichecker/hichecker/HiCheckerNativeTest --gtest_filter=HiCheckerNativeTest.AddRuleTest001
+
+# 头文件 / inner_kits 改动后，确认 bundle.json 已登记导出头文件
+grep -n "inner_kits\|header_files\|header_base" bundle.json
+```
+
+- 本仓库未配置独立静态分析工具；以构建无新增告警作为静态检查门槛。
+- 涉及规则常量 / crash 行为 / NAPI/ANI 绑定的改动仍须走 §3.4 完成标准。
+
 ## 4. 核心工作原则（必须遵守）
 
 ### 4.1 只以真实代码为准
@@ -189,6 +205,56 @@ prebuilts/build-tools/linux-x86/bin/ninja -C out/rk3568 HiCheckerNativeTest
 2. 确认已阅读相关 README / 头文件（或明确声明「无相关文档」）。
 3. 根据「项目约束」确认不违反任何约束。
 4. 声明：「将修改 X，已阅读 Y，遵循 Z 约束」。
+
+### 6.2 词汇 / 场景 → 文档触发表
+
+遇到以下关键词或场景时，**先读对应文档/约束节**再动手：
+
+| 触发词 / 场景 | 先读 |
+|---|---|
+| 改 `interfaces/native/innerkits/include/` 头文件 | `README_zh.md` API 段 + §8.3 公共 API/ABI 约束 |
+| 任务含 `AddRule`/`RemoveRule`/`Contains`/`GetRule` | `hichecker.h:27-38` 规则常量 + §7.3 规则位掩码 |
+| 任务含 `NotifySlowProcess`/`NotifySlowEvent`/`NotifyCaution`/`HandleCaution` | `hichecker.cpp` 告警流程 + §7.4 |
+| 任务含 `NAPI`/`napi`/`JS` | `napi_hichecker.cpp` + §7.5 错误码 401 |
+| 任务含 `ANI`/`ArkTS`/`ets` | `ani_hichecker.cpp` + `@ohos.hichecker.ets` + §8.7 生成代码 |
+| 任务含 `ALLOWED_RULE`/`系统参数`/`hiviewdfx.hichecker` | `hichecker.cpp:227` `InitHicheckerParam` + §8.4 |
+| 任务含 `jsleakwatcher`/`泄露检测` | `interfaces/js/kits/napi/js_leak_watcher/` + §7.5 jsleakwatcher 错误码 |
+| 任务含 `OAT`/`第三方`/`HiSysEvent` | `OAT.xml` + §8.8 第三方依赖与 DFX |
+| 任务含 `SIGABRT`/`crash`/`RULE_CAUTION_TRIGGER_CRASH` | `hichecker.cpp:198` + §8.6 crash 行为约束 |
+
+### 6.3 术语表
+
+| 术语 | 含义 |
+|---|---|
+| `HiChecker` | 静态工具类（构造删除），所有 API 为静态方法（`hichecker.h:55`） |
+| `Rule` 命名空间 | `uint64_t` 位常量定义域（`hichecker.h:26`），含 6 条规则 + 聚合掩码 |
+| `RULE_CAUTION_PRINT_LOG` / `TRIGGER_CRASH` | 告警行为规则（仅记日志 / 触发 SIGABRT） |
+| `processRules_` / `threadLocalRules_` | 进程级 / 线程级规则状态（volatile uint64 / thread_local） |
+| `Caution` | 告警载体类，含 triggerRule / cautionMsg / stackTrace |
+| `NeedCheckSlowEvent()` | 返回 `checkMode_`，供高频路径前置短路 |
+| `ALLOWED_RULE` | 系统参数初始化允许的规则集（仅 `RULE_CHECK_ARKUI_PERFORMANCE`，`hichecker.cpp:42`） |
+| `inner_kits` | `bundle.json` 中对外导出的内部 API（头文件 + so），改签名属 ABI 风险 |
+| `innerapi_tags = ["platformsdk"]` | 标记 inner API 归属平台 SDK |
+| `pac_ret` / CFI | 分支保护（PAC return address）/ 控制流完整性，构建加固项 |
+| `module_output_path` | 测试产物输出子路径，hichecker 为 `hichecker/hichecker` |
+
+### 6.4 主调用链
+
+定位与改动时按以下端到端路径理解数据流：
+
+1. **规则增删链**
+   `AddRule(rule)` → `CheckRule`（`hichecker.cpp:218` 校验 rule ⊆ ALL_RULES）→ 按位路由：线程位 → `threadLocalRules_`，进程位 → `processRules_`（`:49`）→ 完成。
+
+2. **告警触发链**
+   `NotifySlowProcess(tag)` / `NotifySlowEvent(tag)` / `NotifyAbilityConnectionLeak(caution)` / `NotifyCaution(rule, tag, caution)` → 构建 `Caution`（含 `DumpStackTrace` → `GetBacktrace`）→ `HandleCaution` → `OnThreadCautionFound` → `OnProcessCautionFound` → `HasCautionRule` 判定 → `PrintLog`（HILOG_INFO）或 `TriggerCrash`（`kill(getpid(), SIGABRT)`，`hichecker.cpp:198`）。
+
+3. **JS/ArkTS 调用链**
+   JS: `@ohos.hichecker.addRule(bigint)` → `napi_hichecker.cpp:AddRule` → `HiChecker::AddRule`（C++）→ 返回 void。
+   ArkTS: `@ohos.hichecker.addRule(bigint)` → `ani_hichecker.cpp:AddRule` → `HiChecker::AddRule` → 返回 void。
+   两套绑定行为必须一致（方法集、错误码 401、规则常量数值）。
+
+4. **系统参数初始化链**
+   `init/bootstrap` → `InitHicheckerParamWrapper(processName)`（`hichecker_wrapper.h:22`，extern "C"）→ `HiChecker::InitHicheckerParam(processName)`（`hichecker.cpp:227`）→ 读 `hiviewdfx.hichecker.<processName>` 系统参数 → `strtoull` → 仅 `rule & ALLOWED_RULE`（`RULE_CHECK_ARKUI_PERFORMANCE`）生效 → `AddRule`。
 
 ## 7. 编码约定
 
@@ -313,6 +379,20 @@ prebuilts/build-tools/linux-x86/bin/ninja -C out/rk3568 HiCheckerNativeTest
 - `.abc`（`hichecker.abc`）由 `generate_static_abc` 从 `@ohos.hichecker.ets` 生成，**不要手改**生成产物；改 `.ets` 源。
 - `jsleak_watcher.abc` 由 `es2abc_gen_abc` 从 `js_leak_watcher.ts` 生成，同理。
 - `branch_protector_ret = "pac_ret"`、`-fstack-protector-strong` 等加固项不要移除。
+
+### 8.8 第三方依赖与 DFX
+
+**禁止：**
+
+- 引入或升级第三方依赖而不经许可证评审、不同步 `OAT.xml`。
+- 新增 HiSysEvent 事件而不补充事件名、领域与参数校验。
+- 将敏感信息（堆栈、内存布局）写入 HiSysEvent 事件字段。
+
+**修改前必须确认：**
+
+- `bundle.json` `deps.components` 增删：许可证兼容性，同步 `OAT.xml` 过滤规则。
+- 新增/修改 HiSysEvent：事件名、领域 ID、参数脱敏。
+- DFX 日志/事件涉及跨子系统（`hilog`、`hiview`、`hisysevent`、`faultloggerd`）的改动。
 
 ## 9. 常见陷阱
 
