@@ -78,6 +78,13 @@ static bool GetNapiStringValue(napi_env env, napi_value value, std::string& str)
 
 static uint64_t GetFileSize(const std::string& filePath)
 {
+    char* realPath = realpath(filePath.c_str(), nullptr);
+    if (realPath == nullptr) {
+        return 0;
+    }
+    free(realPath);
+    realPath = nullptr;
+
     struct stat st;
     if (stat(filePath.c_str(), &st) != 0) {
         return 0;
