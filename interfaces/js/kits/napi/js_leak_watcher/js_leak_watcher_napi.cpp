@@ -30,6 +30,7 @@
 #define LOG_TAG "JSLEAK_WATCHER_C"
 
 #define JSLEAK_WATCHER_NAME_LEN 256
+#define PATH_MAX 1024
 
 using namespace OHOS::Ace;
 using namespace OHOS::AppExecFwk;
@@ -78,19 +79,15 @@ static bool GetNapiStringValue(napi_env env, napi_value value, std::string& str)
 
 static uint64_t GetFileSize(const std::string& filePath)
 {
-    constexpr auto buffSize = 1024;
-    char buff[buffSize] = {0};
-    char* canonicalPath = realpath(filePath.c_str(), buff);
-    if (canonicalPath == nullptr) {
+    char buff[PATH_MAX] = {0};
+    if (realpath(filePath.c_str(), buff) == nullptr) {
         return 0;
     }
     struct stat st;
-    if (stat(canonicalPath.c_str(), &st) != 0) {
-        free(canonicalPath);
+    if (stat(buff, &st) != 0) {
         return 0;
     }
-    free(canonicalPath);
-    return st.st_size;
+    return static_cast<uint64_t>(st.st_size);
 }
 
 static bool AppendMetaData(const std::string& filePath)
