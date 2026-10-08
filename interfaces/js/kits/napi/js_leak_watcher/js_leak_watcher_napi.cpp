@@ -30,7 +30,6 @@
 #define LOG_TAG "JSLEAK_WATCHER_C"
 
 #define JSLEAK_WATCHER_NAME_LEN 256
-#define PATH_MAX 1024
 
 using namespace OHOS::Ace;
 using namespace OHOS::AppExecFwk;
