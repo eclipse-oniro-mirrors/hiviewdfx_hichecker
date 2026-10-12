@@ -113,8 +113,11 @@ void CreateCallbackObject(napi_env env, napi_value* js_callback)
     }
 }
 
-static bool BuildEnableArgs(napi_env env, napi_value args[ENABLE_ARGS_COUNT])
+static bool BuildEnableArgs(napi_env env, napi_value args[ENABLE_ARGS_COUNT], uint32_t argsLen)
 {
+    if (argsLen > ENABLE_ARGS_COUNT) {
+        return false;
+    }
     if (napi_get_boolean(env, true, &args[ARGS_INDEX_FIRST]) != napi_ok) {
         HILOG_ERROR(LOG_CORE, "BuildEnableArgs napi_get_boolean failed");
         return false;
@@ -174,7 +177,7 @@ void JSLeakWatcherEarlyInit(napi_env env, std::string bundleName)
     }
 
     napi_value args[ENABLE_ARGS_COUNT];
-    if (!BuildEnableArgs(env, args)) {
+    if (!BuildEnableArgs(env, args, ENABLE_ARGS_COUNT)) {
         napi_close_handle_scope(env, scope);
         return;
     }
