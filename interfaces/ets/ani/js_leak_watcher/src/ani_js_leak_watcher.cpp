@@ -193,6 +193,10 @@ static void CloseAllFiles(FILE *targetFile, FILE *metaDataFile)
 
 bool AppendMetaData(const std::string &filePath)
 {
+    char buff[PATH_MAX] = {0};
+    if (realpath(filePath.c_str(), buff) == nullptr) {
+        return false;
+    }
     const char *metaDataPath = "/system/etc/arkcompiler/metadata.json";
     auto rawHeapFileSize = static_cast<uint32_t>(GetFileSize(filePath));
     auto metaDataFileSize = static_cast<uint32_t>(GetFileSize(metaDataPath));
