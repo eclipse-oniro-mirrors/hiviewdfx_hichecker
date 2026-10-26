@@ -87,8 +87,8 @@ static uint64_t GetFileSize(const std::string& filePath)
 
 static bool AppendMetaData(const std::string& filePath)
 {
-    char buff[PATH_MAX] = {0};
-    if (realpath(filePath.c_str(), buff) == nullptr) {
+    char buf[PATH_MAX] = {0};
+    if (realpath(filePath.c_str(), buf) == nullptr) {
         return false;
     }
     const char* metaDataPath = "/system/etc/arkcompiler/metadata.json";
