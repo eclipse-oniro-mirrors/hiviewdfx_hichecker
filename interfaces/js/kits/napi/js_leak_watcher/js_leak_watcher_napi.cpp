@@ -92,9 +92,9 @@ static bool AppendMetaData(const std::string& filePath)
         return false;
     }
     const char* metaDataPath = "/system/etc/arkcompiler/metadata.json";
-    auto rawHeapFileSize = static_cast<uint32_t>(GetFileSize(filePath));
+    auto rawHeapFileSize = static_cast<uint32_t>(GetFileSize(buf));
     auto metaDataFileSize = static_cast<uint32_t>(GetFileSize(metaDataPath));
-    FILE* targetFile = fopen(filePath.c_str(), "ab");
+    FILE* targetFile = fopen(buf, "ab");
     if (targetFile == nullptr) {
         return false;
     }
