@@ -78,23 +78,23 @@ static bool GetNapiStringValue(napi_env env, napi_value value, std::string& str)
 
 static uint64_t GetFileSize(const std::string& filePath)
 {
-    char buff[PATH_MAX] = {0};
-    if (realpath(filePath.c_str(), buff) == nullptr) {
-        return 0;
-    }
     struct stat st;
-    if (stat(buff, &st) != 0) {
+    if (stat(filePath.c_str(), &st) != 0) {
         return 0;
     }
-    return static_cast<uint64_t>(st.st_size);
+    return st.st_size;
 }
 
 static bool AppendMetaData(const std::string& filePath)
 {
+    char buf[PATH_MAX] = {0};
+    if (realpath(filePath.c_str(), buf) == nullptr) {
+        return false;
+    }
     const char* metaDataPath = "/system/etc/arkcompiler/metadata.json";
-    auto rawHeapFileSize = static_cast<uint32_t>(GetFileSize(filePath));
+    auto rawHeapFileSize = static_cast<uint32_t>(GetFileSize(buf));
     auto metaDataFileSize = static_cast<uint32_t>(GetFileSize(metaDataPath));
-    FILE* targetFile = fopen(filePath.c_str(), "ab");
+    FILE* targetFile = fopen(buf, "ab");
     if (targetFile == nullptr) {
         return false;
     }
