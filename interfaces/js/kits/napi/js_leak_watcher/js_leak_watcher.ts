@@ -850,7 +850,7 @@ let jsLeakWatcher = {
       watchObjMap.clear();
     }
   },
-  markLifecycleEnded: (obj: object | null | undefined) => {
+  markLifecycleEnded: (obj: object | null | undefined): void => {
     markLifecycleEnded(obj);
   },
   enableLeakWatcher: (isEnabled: boolean, configs: Array<string> | LeakWatcherConfig,
