@@ -37,6 +37,7 @@ const ERROR_MSG_CONFIG_INVALID = 'The parameter config invalid. Please check!';
 const ERROR_CODE_CALLBACK_INVALID = 10801003;
 const ERROR_MSG_CALLBACK_INVALID = 'The parameter callback invalid. Please check!';
 const MIN_CHECK_INTERVAL = 90000;
+const LEAK_MARKER_PROPERTY = '__ohosDfxJsLeakMarker';
 
 enum MonitorObjectType {
   ALL = -1,
@@ -616,6 +617,27 @@ function registerObject(obj, msg) {
   registry.register(obj, objMsg.hash);
 }
 
+function markLifecycleEnded(obj: object | null | undefined): void {
+  if (obj === undefined || obj === null || typeof obj !== 'object') {
+    throw new BusinessError(ERROR_CODE_INVALID_PARAM);
+  }
+  let target = obj as any;
+  if (!Object.isExtensible(target)) {
+    throw new BusinessError(ERROR_CODE_INVALID_PARAM);
+  }
+  if (Object.prototype.hasOwnProperty.call(target, LEAK_MARKER_PROPERTY)) {
+    return;
+  }
+  let marker = { isReleased: true };
+  target[LEAK_MARKER_PROPERTY] = marker;
+  if (enabled) {
+    let hash = util.getHash(obj);
+    if (!watchObjMap.has(hash)) {
+      registerObject(obj, '');
+    }
+  }
+}
+
 let lifecycleId;
 function registerAbilityLifecycleCallback() {
   let abilityLifecycleCallback = {
@@ -819,6 +841,9 @@ let jsLeakWatcher = {
     if (!isEnable) {
       watchObjMap.clear();
     }
+  },
+  markLifecycleEnded: (obj: object | null | undefined) => {
+    markLifecycleEnded(obj);
   },
   enableLeakWatcher: (isEnabled: boolean, configs: Array<string> | LeakWatcherConfig,
     callback: Callback<Array<string>>) => {
