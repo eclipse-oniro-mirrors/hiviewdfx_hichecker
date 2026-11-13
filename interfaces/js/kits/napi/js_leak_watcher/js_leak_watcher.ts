@@ -851,6 +851,7 @@ let jsLeakWatcher = {
     }
   },
   markLifecycleEnded: (obj: object | null | undefined): void => {
+    jsLeakWatcherNative.apiRecord('markLifecycleEnded');
     markLifecycleEnded(obj);
   },
   enableLeakWatcher: (isEnabled: boolean, configs: Array<string> | LeakWatcherConfig,
