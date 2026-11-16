@@ -36,7 +36,10 @@ const ERROR_CODE_CONFIG_INVALID = 10801002;
 const ERROR_MSG_CONFIG_INVALID = 'The parameter config invalid. Please check!';
 const ERROR_CODE_CALLBACK_INVALID = 10801003;
 const ERROR_MSG_CALLBACK_INVALID = 'The parameter callback invalid. Please check!';
+const ERROR_MSG_MARK_OBJ_INVALID = 'Parameter error. The parameter must be a user-defined, non-null ArkTS object.';
+const ERROR_MSG_MARK_OBJ_NOT_EXTENSIBLE = 'Parameter error. The obj is not extensible, and the leak marker cannot be added.';
 const MIN_CHECK_INTERVAL = 90000;
+const LEAK_MARKER_PROPERTY = '__ohosDfxJsLeakMarker';
 
 enum MonitorObjectType {
   ALL = -1,
@@ -141,9 +144,11 @@ errMap.set(ERROR_CODE_CONFIG_INVALID, ERROR_MSG_CONFIG_INVALID);
 errMap.set(ERROR_CODE_CALLBACK_INVALID, ERROR_MSG_CALLBACK_INVALID);
 
 class BusinessError extends Error {
-  constructor(code) {
+  constructor(code: number, message: string | undefined = undefined) {
     let msg = '';
-    if (errMap.has(code)) {
+    if (message !== undefined) {
+      msg = message;
+    } else if (errMap.has(code)) {
       msg = errMap.get(code);
     } else {
       msg = ERROR_MSG_INVALID_PARAM;
@@ -616,6 +621,31 @@ function registerObject(obj, msg) {
   registry.register(obj, objMsg.hash);
 }
 
+interface MarkableObj {
+  __ohosDfxJsLeakMarker?: object;
+}
+
+function markLifecycleEnded(obj: object | null | undefined): void {
+  if (obj === undefined || obj === null || typeof obj !== 'object') {
+    throw new BusinessError(ERROR_CODE_INVALID_PARAM, ERROR_MSG_MARK_OBJ_INVALID);
+  }
+  let target = obj as MarkableObj;
+  if (!Object.isExtensible(target)) {
+    throw new BusinessError(ERROR_CODE_INVALID_PARAM, ERROR_MSG_MARK_OBJ_NOT_EXTENSIBLE);
+  }
+  if (Object.prototype.hasOwnProperty.call(target, LEAK_MARKER_PROPERTY)) {
+    return;
+  }
+  let marker = { isReleased: true };
+  target[LEAK_MARKER_PROPERTY] = marker;
+  if (enabled) {
+    let hash = util.getHash(obj);
+    if (!watchObjMap.has(hash)) {
+      registerObject(obj, '');
+    }
+  }
+}
+
 let lifecycleId;
 function registerAbilityLifecycleCallback() {
   let abilityLifecycleCallback = {
@@ -819,6 +849,10 @@ let jsLeakWatcher = {
     if (!isEnable) {
       watchObjMap.clear();
     }
+  },
+  markLifecycleEnded: (obj: object | null | undefined): void => {
+    jsLeakWatcherNative.apiRecord('markLifecycleEnded');
+    markLifecycleEnded(obj);
   },
   enableLeakWatcher: (isEnabled: boolean, configs: Array<string> | LeakWatcherConfig,
     callback: Callback<Array<string>>) => {
