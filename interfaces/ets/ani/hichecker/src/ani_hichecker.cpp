@@ -109,7 +109,7 @@ ani_object BuildBigintResult(ani_env *env, uint64_t rule)
 void ThrowError(ani_env *env, int32_t errCode, const std::string& errMsg)
 {
     ani_class cls{};
-    if (ANI_OK != env->FindClass(CLASS_NAME_BUSINESSERROR, &cls)) {;
+    if (ANI_OK != env->FindClass(CLASS_NAME_BUSINESSERROR, &cls)) {
         return;
     }
     ani_method ctor {};
