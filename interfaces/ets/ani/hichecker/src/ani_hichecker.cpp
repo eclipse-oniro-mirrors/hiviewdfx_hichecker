@@ -15,8 +15,6 @@
 
 #include "ani_hichecker.h"
 
-#include <map>
-
 #include "hichecker.h"
 #include "hilog/log_c.h"
 #include "hilog/log_cpp.h"
@@ -35,6 +33,7 @@ const char FUNC_NAME_GETLONG[] = "getLong";
 const char BIGINT_CTOR_MANGLING[] = "C{std.core.String}:";
 constexpr uint64_t GET_RULE_PARAM_FAIL = 0;
 constexpr int ERR_PARAM = 401;
+constexpr int ARRAY_INDEX_FIRST = 0;
 }
 
 bool MatchValueType(ani_env *env, ani_object value, const char* targetType)
@@ -50,15 +49,29 @@ bool MatchValueType(ani_env *env, ani_object value, const char* targetType)
     return isBigInt;
 }
 
-uint64_t GetRuleParam(ani_env *env, ani_object rule)
+uint64_t GetRuleParam(ani_env *env, ani_object rule, bool throwOnError)
 {
+    ani_boolean isNullish = ANI_FALSE;
+    if (ANI_OK == env->Reference_IsNullishValue(static_cast<ani_ref>(rule), &isNullish) && isNullish) {
+        HILOG_ERROR(LOG_CORE, "Param is null or undefined");
+        if (throwOnError) {
+            ThrowParamRequiredError(env);
+        }
+        return GET_RULE_PARAM_FAIL;
+    }
     if (!MatchValueType(env, rule, CLASS_NAME_BIGINT)) {
         HILOG_ERROR(LOG_CORE, "Type error, should be bigint type!");
+        if (throwOnError) {
+            ThrowParamTypeError(env);
+        }
         return GET_RULE_PARAM_FAIL;
     }
     ani_long value = 0;
     if (ANI_OK != env->Object_CallMethodByName_Long(rule, FUNC_NAME_GETLONG, ":l", &value)) {
         HILOG_ERROR(LOG_CORE, "Get bigint value failed.");
+        if (throwOnError) {
+            ThrowParamTypeError(env);
+        }
         return GET_RULE_PARAM_FAIL;
     }
     if (value == static_cast<ani_long>(GET_RULE_PARAM_FAIL)) {
@@ -93,14 +106,8 @@ ani_object BuildBigintResult(ani_env *env, uint64_t rule)
     return result;
 }
 
-void ThrowError(ani_env *env, int32_t errCode)
+void ThrowError(ani_env *env, int32_t errCode, const std::string& errMsg)
 {
-    std::map<int32_t, std::string> errMap = {
-        {ERR_PARAM, "Invalid input parameter! only one bigint type parameter is needed"},
-    };
-    if (errMap.find(errCode) == errMap.end()) {
-        return;
-    }
     ani_class cls{};
     if (ANI_OK != env->FindClass(CLASS_NAME_BUSINESSERROR, &cls)) {;
         return;
@@ -116,9 +123,8 @@ void ThrowError(ani_env *env, int32_t errCode)
     if (ANI_OK != env->Object_SetPropertyByName_Double(error, "code", static_cast<ani_double>(errCode))) {
         return;
     }
-    std::string message = errMap[errCode];
     ani_string messageRef {};
-    if (ANI_OK != env->String_NewUTF8(message.c_str(), message.size(), &messageRef)) {
+    if (ANI_OK != env->String_NewUTF8(errMsg.c_str(), errMsg.size(), &messageRef)) {
         return;
     }
     if (ANI_OK != env->Object_SetPropertyByName_Ref(error, "message", static_cast<ani_ref>(messageRef))) {
@@ -130,10 +136,24 @@ void ThrowError(ani_env *env, int32_t errCode)
     return;
 }
 
+void ThrowParamTypeError(ani_env *env)
+{
+    std::string msg = "Parameter error. Param[" + std::to_string(ARRAY_INDEX_FIRST) +
+        "] type mismatch. Expected: bigint, Actual: non-bigint.";
+    ThrowError(env, ERR_PARAM, msg);
+}
+
+void ThrowParamRequiredError(ani_env *env)
+{
+    std::string msg = "Parameter error. Param[" + std::to_string(ARRAY_INDEX_FIRST) +
+        "] is required, cannot be null or undefined.";
+    ThrowError(env, ERR_PARAM, msg);
+}
+
 
 static void AddRule(ani_env *env, ani_object rule)
 {
-    uint64_t ruleVal = GetRuleParam(env, rule);
+    uint64_t ruleVal = GetRuleParam(env, rule, false);
     if (ruleVal != GET_RULE_PARAM_FAIL) {
         HiChecker::AddRule(ruleVal);
     }
@@ -142,7 +162,7 @@ static void AddRule(ani_env *env, ani_object rule)
 
 void RemoveRule(ani_env *env, ani_object rule)
 {
-    uint64_t ruleVal = GetRuleParam(env, rule);
+    uint64_t ruleVal = GetRuleParam(env, rule, false);
     if (ruleVal != GET_RULE_PARAM_FAIL) {
         HiChecker::RemoveRule(ruleVal);
     }
@@ -157,38 +177,31 @@ static ani_object GetRule(ani_env *env)
 
 ani_boolean Contains(ani_env *env, ani_object rule)
 {
-    uint64_t ruleVal = GetRuleParam(env, rule);
+    uint64_t ruleVal = GetRuleParam(env, rule, false);
     return HiChecker::Contains(ruleVal);
 }
 
 void AddCheckRule(ani_env *env, ani_object rule)
 {
-    uint64_t ruleVal = GetRuleParam(env, rule);
+    uint64_t ruleVal = GetRuleParam(env, rule, true);
     if (ruleVal != GET_RULE_PARAM_FAIL) {
         HiChecker::AddRule(ruleVal);
-    } else {
-        ThrowError(env, ERR_PARAM);
     }
     return;
 }
 
 void RemoveCheckRule(ani_env *env, ani_object rule)
 {
-    uint64_t ruleVal = GetRuleParam(env, rule);
+    uint64_t ruleVal = GetRuleParam(env, rule, true);
     if (ruleVal != GET_RULE_PARAM_FAIL) {
         HiChecker::RemoveRule(ruleVal);
-    } else {
-        ThrowError(env, ERR_PARAM);
     }
     return;
 }
 
 ani_boolean ContainsCheckRule(ani_env *env, ani_object rule)
 {
-    uint64_t ruleVal = GetRuleParam(env, rule);
-    if (ruleVal == GET_RULE_PARAM_FAIL) {
-        ThrowError(env, ERR_PARAM);
-    }
+    uint64_t ruleVal = GetRuleParam(env, rule, true);
     return HiChecker::Contains(ruleVal);
 }
 }
