@@ -16,6 +16,7 @@
 #ifndef ANI_HICHECKER_H
 #define ANI_HICHECKER_H
 
+#include <string>
 #include <ani.h>
 namespace OHOS {
 namespace HiviewDFX {
@@ -27,9 +28,11 @@ static void AddCheckRule(ani_env *env, ani_object rule);
 static void RemoveCheckRule(ani_env *env, ani_object rule);
 static ani_boolean ContainsCheckRule(ani_env *env, ani_object rule);
 static bool MatchValueType(ani_env *env, ani_object value, const char *targetType);
-static uint64_t GetRuleParam(ani_env *env, ani_object rule);
+static uint64_t GetRuleParam(ani_env *env, ani_object rule, bool throwOnError);
 static ani_object BuildBigintResult(ani_env *env, uint64_t rule);
-static void ThrowError(ani_env *env, int32_t errCode);
+static void ThrowError(ani_env *env, int32_t errCode, const std::string& errMsg);
+static void ThrowParamTypeError(ani_env *env);
+static void ThrowParamRequiredError(ani_env *env);
 } // HiviewDFX
 } // OHOS
 #endif // ANI_HICHECKER_H

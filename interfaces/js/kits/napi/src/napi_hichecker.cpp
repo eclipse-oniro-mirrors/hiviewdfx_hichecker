@@ -15,8 +15,6 @@
 
 #include "napi_hichecker.h"
 
-#include <map>
-
 #include "hichecker.h"
 #include "hilog/log_c.h"
 #include "hilog/log_cpp.h"
@@ -36,7 +34,7 @@ constexpr int ERR_PARAM = 401;
 
 napi_value AddRule(napi_env env, napi_callback_info info)
 {
-    uint64_t rule = GetRuleParam(env, info);
+    uint64_t rule = GetRuleParam(env, info, false);
     if (rule != GET_RULE_PARAM_FAIL) {
         HiChecker::AddRule(rule);
     }
@@ -45,7 +43,7 @@ napi_value AddRule(napi_env env, napi_callback_info info)
 
 napi_value RemoveRule(napi_env env, napi_callback_info info)
 {
-    uint64_t rule = GetRuleParam(env, info);
+    uint64_t rule = GetRuleParam(env, info, false);
     if (rule != GET_RULE_PARAM_FAIL) {
         HiChecker::RemoveRule(rule);
     }
@@ -60,7 +58,7 @@ napi_value GetRule(napi_env env, napi_callback_info info)
 
 napi_value Contains(napi_env env, napi_callback_info info)
 {
-    uint64_t rule = GetRuleParam(env, info);
+    uint64_t rule = GetRuleParam(env, info, false);
     napi_value result = nullptr;
     if (napi_get_boolean(env, HiChecker::Contains(rule), &result) != napi_ok) {
         HILOG_ERROR(LOG_CORE, "Contains napi_get_boolean failed");
@@ -70,22 +68,18 @@ napi_value Contains(napi_env env, napi_callback_info info)
 
 napi_value AddCheckRule(napi_env env, napi_callback_info info)
 {
-    uint64_t rule = GetRuleParam(env, info);
+    uint64_t rule = GetRuleParam(env, info, true);
     if (rule != GET_RULE_PARAM_FAIL) {
         HiChecker::AddRule(rule);
-    } else {
-        ThrowError(env, ERR_PARAM);
     }
     return CreateUndefined(env);
 }
 
 napi_value RemoveCheckRule(napi_env env, napi_callback_info info)
 {
-    uint64_t rule = GetRuleParam(env, info);
+    uint64_t rule = GetRuleParam(env, info, true);
     if (rule != GET_RULE_PARAM_FAIL) {
         HiChecker::RemoveRule(rule);
-    } else {
-        ThrowError(env, ERR_PARAM);
     }
     return CreateUndefined(env);
 }
@@ -93,10 +87,7 @@ napi_value RemoveCheckRule(napi_env env, napi_callback_info info)
 napi_value ContainsCheckRule(napi_env env, napi_callback_info info)
 {
     napi_value result = nullptr;
-    uint64_t rule = GetRuleParam(env, info);
-    if (rule == GET_RULE_PARAM_FAIL) {
-        ThrowError(env, ERR_PARAM);
-    }
+    uint64_t rule = GetRuleParam(env, info, true);
     if (napi_get_boolean(env, HiChecker::Contains(rule), &result) != napi_ok) {
         HILOG_ERROR(LOG_CORE, "ContainsCheckRule napi_get_boolean failed");
     }
@@ -157,18 +148,54 @@ napi_value CreateUndefined(napi_env env)
     return result;
 }
 
-void ThrowError(napi_env env, int errCode)
+void ThrowError(napi_env env, int errCode, const std::string& errMsg)
 {
-    std::map<int, std::string> errMap = {
-        { ERR_PARAM, "Invalid input parameter! only one bigint type parameter is needed" },
-    };
-    if (errMap.find(errCode) != errMap.end()) {
-        napi_throw_error(env, std::to_string(errCode).c_str(), errMap[errCode].c_str());
-    }
-    return;
+    napi_throw_error(env, std::to_string(errCode).c_str(), errMsg.c_str());
 }
 
-uint64_t GetRuleParam(napi_env env, napi_callback_info info)
+std::string GetNapiValueTypeString(napi_valuetype type)
+{
+    switch (type) {
+        case napi_undefined:
+            return "undefined";
+        case napi_null:
+            return "null";
+        case napi_boolean:
+            return "boolean";
+        case napi_number:
+            return "number";
+        case napi_string:
+            return "string";
+        case napi_symbol:
+            return "symbol";
+        case napi_object:
+            return "object";
+        case napi_function:
+            return "function";
+        case napi_external:
+            return "external";
+        case napi_bigint:
+            return "bigint";
+        default:
+            return "unknown";
+    }
+}
+
+void ThrowParamCountError(napi_env env, size_t actualCount)
+{
+    std::string msg = "Parameter error. Incorrect parameter count. Expected: " +
+        std::to_string(ONE_VALUE_LIMIT) + ", Actual: " + std::to_string(actualCount) + ".";
+    ThrowError(env, ERR_PARAM, msg);
+}
+
+void ThrowParamTypeError(napi_env env, napi_valuetype actualType)
+{
+    std::string msg = "Parameter error. Param[" + std::to_string(ARRAY_INDEX_FIRST) +
+        "] type mismatch. Expected: bigint, Actual: " + GetNapiValueTypeString(actualType) + ".";
+    ThrowError(env, ERR_PARAM, msg);
+}
+
+static napi_value GetRuleArg(napi_env env, napi_callback_info info, bool throwOnError)
 {
     size_t argc = ONE_VALUE_LIMIT;
     napi_value argv[ONE_VALUE_LIMIT] = { nullptr };
@@ -176,40 +203,60 @@ uint64_t GetRuleParam(napi_env env, napi_callback_info info)
     void *data = nullptr;
     if (napi_get_cb_info(env, info, &argc, argv, &thisVar, &data) != napi_ok) {
         HILOG_ERROR(LOG_CORE, "GetRuleParam napi_get_cb_info failed");
-        return GET_RULE_PARAM_FAIL;
+        return nullptr;
     }
     if (argc != ONE_VALUE_LIMIT) {
         HILOG_ERROR(LOG_CORE, "invalid number=%{public}d of params.", ONE_VALUE_LIMIT);
-        return GET_RULE_PARAM_FAIL;
+        if (throwOnError) {
+            ThrowParamCountError(env, argc);
+        }
+        return nullptr;
     }
-    if (!MatchValueType(env, argv[ARRAY_INDEX_FIRST], napi_bigint)) {
-        HILOG_ERROR(LOG_CORE, "Type error, should be bigint type!");
+    return argv[ARRAY_INDEX_FIRST];
+}
+
+static bool ReportTypeError(napi_env env, bool throwOnError, napi_valuetype valueType, const char* logMsg)
+{
+    HILOG_ERROR(LOG_CORE, "%{public}s", logMsg);
+    if (throwOnError) {
+        ThrowParamTypeError(env, valueType);
+    }
+    return false;
+}
+
+static bool ParseBigIntRule(napi_env env, napi_value value, bool throwOnError, uint64_t& rule)
+{
+    napi_valuetype valueType = napi_undefined;
+    if (napi_typeof(env, value, &valueType) != napi_ok) {
+        return ReportTypeError(env, throwOnError, valueType, "MatchValueType napi_typeof failed");
+    }
+    if (valueType != napi_bigint) {
+        return ReportTypeError(env, throwOnError, valueType, "Type error, should be bigint type!");
+    }
+    bool lossless = true;
+    if (napi_get_value_bigint_uint64(env, value, &rule, &lossless) != napi_ok) {
+        return ReportTypeError(env, throwOnError, valueType, "GetRuleParam napi_get_value_bigint_uint64 failed");
+    }
+    if (!lossless) {
+        return ReportTypeError(env, throwOnError, valueType, "Type error, bigint should be 64!");
+    }
+    return true;
+}
+
+uint64_t GetRuleParam(napi_env env, napi_callback_info info, bool throwOnError)
+{
+    napi_value arg = GetRuleArg(env, info, throwOnError);
+    if (arg == nullptr) {
         return GET_RULE_PARAM_FAIL;
     }
     uint64_t rule = GET_RULE_PARAM_FAIL;
-    bool lossless = true;
-    if (napi_get_value_bigint_uint64(env, argv[ARRAY_INDEX_FIRST], &rule, &lossless) != napi_ok) {
-        HILOG_ERROR(LOG_CORE, "GetRuleParam napi_get_value_bigint_uint64 failed");
-        return GET_RULE_PARAM_FAIL;
-    }
-    if (!lossless) {
-        HILOG_ERROR(LOG_CORE, "Type error, bigint should be 64!");
+    if (!ParseBigIntRule(env, arg, throwOnError, rule)) {
         return GET_RULE_PARAM_FAIL;
     }
     if (rule == GET_RULE_PARAM_FAIL) {
         HILOG_ERROR(LOG_CORE, "invalid input, please check!");
     }
     return rule;
-}
-
-bool MatchValueType(napi_env env, napi_value value, napi_valuetype targetType)
-{
-    napi_valuetype valueType = napi_undefined;
-    if (napi_typeof(env, value, &valueType) != napi_ok) {
-        HILOG_ERROR(LOG_CORE, "MatchValueType napi_typeof failed");
-        return false;
-    }
-    return valueType == targetType;
 }
 
 static napi_module g_module = {
